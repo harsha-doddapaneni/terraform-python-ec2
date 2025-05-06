@@ -1,37 +1,34 @@
-import boto3
-from botocore.exceptions import ClientError
+import requests
+from dotenv import dotenv_values
 
-def stop_instances_by_tag(tags, region):
-    ec2 = boto3.client('ec2', region_name=region)
-    # List Comprehension
-    tag_filters = [{'Name': f'tag:{key}', 'Values': [value]} for key, value in tags.items()]
-    # tag_filters = []
-    # for key, value in tags.items():
-    #     tag_filters.append({'Name': f'tag:{key}', 'Values': [value]})
-    tag_filters.append({'Name': 'instance-state-name', 'Values': ['running']})  # Include only running instances
-    try:
-        paginator = ec2.get_paginator('describe_instances')
-        page_iterator = paginator.paginate(Filters=tag_filters)
-        
-        instances = []
-        for page in page_iterator:
-            for reservation in page['Reservations']:
-                for instance in reservation['Instances']:
-                    instances.append(instance['InstanceId'])
+config = dotenv_values(".env")
 
-        if instances:
-            stop_response = ec2.stop_instances(InstanceIds=instances)
-            print(f'Stopped instances: {instances}')
-            return stop_response
+# Configuration
+github_token = config['github_token']
+user_name = 'learninguser'
+HEADERS = {'Authorization': f'token {github_token}'} # {'Authorization': 'token ' + github_token}
+
+def list_repos(user_name):
+    """
+    Lists all repositories for the given GitHub account with pagination.
+    """
+    repos = []
+    url = f'https://api.github.com/users/{user_name}/repos'
+    while url:
+        response = requests.get(url, headers=HEADERS, params={'per_page': 100})
+        if response.status_code == 200:
+            repos.extend(response.json())
+            # Check if there is a next page in the pagination
+            if 'next' in response.links:
+                url = response.links['next']['url']
+            else:
+                url = None
         else:
-            print('No running instances found with the specified tags.')
-    except ClientError as e:
-        print(f'An error occurred: {e}')
-def lambda_handler(event, context):
-    # Specify the tag key, value, and region
-    tags = {
-        'Auto-instance-scheduler': 'yes',
-        'Environment': 'dev'  # Example additional tag
-    }
-    region = 'us-east-1'
-    stop_instances_by_tag(tags, region) 
+            print('Failed to fetch repositories:', response.content)
+            url = None
+    
+    # Print the names of the repositories
+    for repo in repos:
+        print(repo['name'])
+
+list_repos(user_name)
